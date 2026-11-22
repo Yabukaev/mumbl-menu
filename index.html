@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>Mumbl · предзаказ</title>
+<!-- Витрина на GitHub Pages: генерирует бот @magiccoffe_bot (orders/publish.py), руками не править.
+     Заказ уходит боту через Telegram (sendData) — к серверу кофейни телефон гостя не обращается: с VPN работает так же быстро. -->
+<script src="tg.js"></script>
+<style>
+:root{
+  --bg:var(--tg-theme-bg-color,#fff);--text:var(--tg-theme-text-color,#1b1b1b);--hint:var(--tg-theme-hint-color,#8a8a8a);
+  --sec:var(--tg-theme-secondary-bg-color,#f2f2f5);--accent:var(--tg-theme-button-color,#c0703a);--accent-text:var(--tg-theme-button-text-color,#fff);
+  --link:var(--tg-theme-link-color,#c0703a);--card:var(--tg-theme-section-bg-color,var(--bg));--danger:#d9433b;--r:14px}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--sec);color:var(--text);font:15px/1.35 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+.screen{display:none;padding:0 12px 110px}.screen.on{display:block}
+header{position:sticky;top:0;z-index:5;background:var(--sec);padding:10px 0 8px}
+h1{font-size:20px;margin:6px 2px 10px}
+.chips{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}.chips::-webkit-scrollbar{display:none}
+.chips.wrap{flex-wrap:wrap}
+.chip{flex:0 0 auto;border:0;border-radius:18px;padding:8px 14px;background:var(--card);color:var(--text);font:inherit;cursor:pointer}
+.chip.on{background:var(--accent);color:var(--accent-text)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.card{background:var(--card);border-radius:var(--r);overflow:hidden;display:flex;flex-direction:column}
+.ph{aspect-ratio:1/1;background:var(--sec);display:flex;align-items:center;justify-content:center;font-size:34px;color:var(--hint)}
+.ph img{width:100%;height:100%;object-fit:cover;display:block}
+.info{padding:8px 10px 10px;display:flex;flex-direction:column;gap:6px;flex:1}
+.name{font-size:14px;flex:1}.price{font-weight:700}
+.add{border:0;border-radius:10px;padding:8px;background:var(--sec);color:var(--text);font:inherit;font-weight:600;cursor:pointer}
+.step{display:flex;align-items:center;justify-content:space-between;background:var(--accent);color:var(--accent-text);border-radius:10px}
+.step button{border:0;background:none;color:inherit;font-size:20px;width:40px;height:36px;cursor:pointer}.step b{min-width:24px;text-align:center}
+.sec-title{margin:14px 4px 8px;font-weight:700;font-size:17px}
+.box{background:var(--card);border-radius:var(--r);padding:4px 12px}
+.row{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--sec)}.row:last-child{border-bottom:0}
+.row .name{font-size:15px}.row .step{background:var(--sec);color:var(--text)}.row .sum{min-width:64px;text-align:right;font-weight:600}
+.total{display:flex;justify-content:space-between;font-weight:700;font-size:17px;padding:12px 4px}
+.opt{display:flex;gap:10px;align-items:center;padding:12px 0;border-bottom:1px solid var(--sec);cursor:pointer}.opt:last-child{border-bottom:0}
+.opt .dot{width:20px;height:20px;border-radius:50%;border:2px solid var(--hint);flex:0 0 auto}.opt.on .dot{border:6px solid var(--accent)}
+.opt small{display:block;color:var(--hint)}
+input{width:100%;border:0;background:transparent;color:var(--text);font:inherit;padding:12px 0;outline:none}
+.btn{display:block;width:100%;border:0;border-radius:12px;padding:13px;background:var(--accent);color:var(--accent-text);font:inherit;font-weight:600;cursor:pointer;text-align:center;text-decoration:none}
+.hint{color:var(--hint);font-size:13px;margin:8px 4px}.err{color:var(--danger);margin:10px 4px;min-height:1em}
+.center{text-align:center;padding-top:30px}.big{font-size:56px}
+.skel{height:220px;border-radius:var(--r);background:linear-gradient(90deg,var(--card),var(--sec),var(--card));background-size:200% 100%;animation:sk 1.2s infinite}
+@keyframes sk{to{background-position:-200% 0}}
+#fallbar{position:fixed;left:12px;right:12px;bottom:12px;display:none}
+</style>
+</head>
+<body>
+<section id="nobot" class="screen">
+  <div class="center">
+    <div class="big">🧁</div>
+    <div class="sec-title">Меню открывается в Telegram</div>
+    <p>Откройте чат с ботом и нажмите кнопку <b>«🧁 Меню»</b> под полем ввода — так заказ сможет дойти до кофейни.</p>
+    <a class="btn" href="https://t.me/magiccoffe_bot?start=preorder">Открыть бота @magiccoffe_bot</a>
+  </div>
+</section>
+
+<section id="menu" class="screen on">
+  <header><h1>Предзаказ · самовывоз</h1><div class="chips" id="cats"></div></header>
+  <div id="items" class="grid"><div class="skel"></div><div class="skel"></div><div class="skel"></div><div class="skel"></div></div>
+  <div class="err" id="menuErr"></div>
+</section>
+
+<section id="checkout" class="screen">
+  <div class="sec-title">Корзина</div>
+  <div class="box" id="cartRows"></div>
+  <div class="total"><span>Итого</span><span id="cartTotal"></span></div>
+
+  <div class="sec-title">Когда заберёте</div>
+  <div class="chips" id="days"></div>
+  <div class="chips wrap" id="wins" style="margin-top:8px"></div>
+  <div class="hint" id="slotHint"></div>
+
+  <div class="sec-title">Имя</div>
+  <div class="box"><input id="name" placeholder="Как к вам обращаться" maxlength="60"></div>
+
+  <div class="sec-title">Оплата</div>
+  <div class="box" id="pays"></div>
+  <p class="hint">Телефон бот попросит в чате, если ещё не знает. Оплата по СБП — кнопкой в чате сразу после «Оформить».</p>
+  <div class="err" id="coErr"></div>
+</section>
+<div id="fallbar"><button class="btn" id="fallBtn"></button></div>
+
+<script>
+const tg = window.Telegram && Telegram.WebApp;
+const $ = id => document.getElementById(id);
+const rub = x => Math.round(x).toLocaleString("ru-RU") + " ₽";
+const esc = s => String(s).replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+const DAYS = ["вс", "пн", "вт", "ср", "чт", "пт", "сб"];
+const S = {items: {}, folders: [], cart: {}, cat: null, cal: {}, lead: 45, tz: 3, day: null, k: null, pay: null, sbp: false};
+const store = {get(k, d) {try {return JSON.parse(localStorage.getItem(k)) ?? d} catch (e) {return d}},
+               set(k, v) {try {localStorage.setItem(k, JSON.stringify(v))} catch (e) {}}};
+// заказ отдаём боту через sendData — это работает, только если меню открыто кнопкой «🧁 Меню» под полем ввода
+const inTelegram = !!(tg && tg.platform && tg.platform !== "unknown");
+const canSend = inTelegram && !(tg.initDataUnsafe && tg.initDataUnsafe.query_id);
+
+function haptic(t) {try {tg.HapticFeedback.impactOccurred(t || "light")} catch (e) {}}
+let mainHandler = null;
+function main(text, fn, active = true) {
+  mainHandler = fn;
+  if (tg && tg.MainButton && inTelegram) {
+    const mb = tg.MainButton;
+    if (!text) {mb.hide(); return}
+    mb.setText(text); active ? mb.enable() : mb.disable(); mb.show();
+  } else {
+    $("fallbar").style.display = text ? "block" : "none"; $("fallBtn").textContent = text; $("fallBtn").disabled = !active;
+  }
+}
+if (tg && tg.MainButton) tg.MainButton.onClick(() => mainHandler && mainHandler());
+$("fallBtn").onclick = () => mainHandler && mainHandler();
+let backFn = () => {};
+function back(fn) {if (!tg || !tg.BackButton) return; tg.BackButton.offClick(backFn); if (fn) {backFn = fn; tg.BackButton.onClick(backFn); tg.BackButton.show()} else tg.BackButton.hide()}
+function show(id) {document.querySelectorAll(".screen").forEach(s => s.classList.toggle("on", s.id === id)); window.scrollTo(0, 0)}
+
+/* ---------- время: окна считаем по Москве, где бы ни был телефон ---------- */
+const mskNow = () => new Date(Date.now() + S.tz * 3600e3);           // поля UTC этой даты = московское время
+const ymd = d => d.toISOString().slice(0, 10);
+const hm = k => String(Math.floor(k / 2)).padStart(2, "0") + ":" + (k % 2 ? "30" : "00");
+function slots() {
+  const now = mskNow(), soon = now.getTime() + S.lead * 60e3, today = ymd(now), tmr = ymd(new Date(now.getTime() + 864e5));
+  const out = [];
+  for (const [day, ranges] of Object.entries(S.cal).sort()) {
+    const wins = [];
+    for (const [a, b] of ranges) for (let k = a; k + 2 <= b; k += 2) {
+      if (Date.parse(day + "T00:00:00Z") + k * 30 * 60e3 >= soon) wins.push({k, label: hm(k) + "–" + hm(k + 2)});
+    }
+    if (!wins.length) continue;
+    const d = new Date(day + "T00:00:00Z");
+    const label = day === today ? "Сегодня" : day === tmr ? "Завтра" : `${day.slice(8)}.${day.slice(5, 7)}, ${DAYS[d.getUTCDay()]}`;
+    out.push({day: day.replaceAll("-", ""), label, windows: wins});
+  }
+  return out.slice(0, 7);
+}
+
+/* ---------- меню ---------- */
+function cartInfo() {
+  let n = 0, sum = 0;
+  for (const [id, q] of Object.entries(S.cart)) {const it = S.items[id]; if (it) {n += q; sum += it.cost * q}}
+  return {n, sum};
+}
+function setQty(id, q) {
+  q = Math.max(0, Math.min(20, q));
+  if (q) S.cart[id] = q; else delete S.cart[id];
+  store.set("cart", S.cart); haptic();
+  renderItems(); if ($("checkout").classList.contains("on")) renderCheckout(); else updateMain();
+}
+function stepper(id) {
+  const q = S.cart[id] || 0;
+  if (!q) return `<button class="add" onclick="setQty('${id}',1)">Добавить</button>`;
+  return `<div class="step"><button onclick="setQty('${id}',${q - 1})">−</button><b>${q}</b><button onclick="setQty('${id}',${q + 1})">+</button></div>`;
+}
+function renderCats() {
+  $("cats").innerHTML = S.folders.map(f => `<button class="chip ${f.id === S.cat ? "on" : ""}" onclick="pickCat(${f.id})">${esc(f.name)}</button>`).join("");
+}
+function pickCat(id) {S.cat = id; renderCats(); renderItems()}
+function renderItems() {
+  const list = Object.values(S.items).filter(i => i.folder === S.cat);
+  $("items").innerHTML = list.map(i => `<div class="card">
+      <div class="ph">${i.img ? `<img loading="lazy" decoding="async" src="${i.img}" alt="" onerror="this.remove()">` : "🧁"}</div>
+      <div class="info"><div class="name">${esc(i.name)}</div><div class="price">${rub(i.cost)}</div>${stepper(i.id)}</div></div>`).join("")
+    || `<div class="hint">В этом разделе пока пусто.</div>`;
+}
+function updateMain() {
+  const {n, sum} = cartInfo();
+  if ($("menu").classList.contains("on")) main(n ? `Корзина · ${n} шт · ${rub(sum)}` : "", openCheckout);
+  else if ($("checkout").classList.contains("on")) {
+    const ready = n && S.day && S.k !== null && S.pay;
+    main(S.pay === "sbp" ? `Оформить и оплатить ${rub(sum)}` : `Оформить · ${rub(sum)}`, submit, !!ready);
+  }
+}
+
+/* ---------- оформление ---------- */
+function openCheckout() {
+  show("checkout"); back(() => {show("menu"); back(null); updateMain()});
+  const sl = slots();
+  if (!sl.some(d => d.day === S.day)) {S.day = sl.length ? sl[0].day : null; S.k = null}
+  renderCheckout();
+}
+function renderCheckout() {
+  const sl = slots();
+  const rows = Object.entries(S.cart).filter(([id]) => S.items[id]);
+  $("cartRows").innerHTML = rows.map(([id, q]) => `<div class="row"><div class="name">${esc(S.items[id].name)}</div>${stepper(id)}
+      <div class="sum">${rub(S.items[id].cost * q)}</div></div>`).join("") || `<div class="row hint">Корзина пуста</div>`;
+  $("cartTotal").textContent = rub(cartInfo().sum);
+  $("days").innerHTML = sl.map(d => `<button class="chip ${d.day === S.day ? "on" : ""}" onclick="pickDay('${d.day}')">${esc(d.label)}</button>`).join("");
+  const d = sl.find(x => x.day === S.day);
+  if (d && !d.windows.some(w => w.k === S.k)) S.k = null;
+  $("wins").innerHTML = d ? d.windows.map(w => `<button class="chip ${w.k === S.k ? "on" : ""}" onclick="pickWin(${w.k})">${w.label}</button>`).join("") : "";
+  $("slotHint").textContent = sl.length ? "" : "Сейчас нет свободного времени для самовывоза.";
+  const opts = [];
+  if (S.sbp) opts.push(["sbp", "Оплатить сейчас по СБП", "кнопка оплаты придёт в чат — откроется приложение вашего банка"]);
+  opts.push(["card", "Картой при получении", ""], ["cash", "Наличными при получении", ""]);
+  $("pays").innerHTML = opts.map(([v, t, s]) => `<div class="opt ${S.pay === v ? "on" : ""}" onclick="pickPay('${v}')"><span class="dot"></span>
+      <div>${t}${s ? `<small>${s}</small>` : ""}</div></div>`).join("");
+  updateMain();
+}
+function pickDay(d) {S.day = d; S.k = null; haptic(); renderCheckout()}
+function pickWin(k) {S.k = k; haptic(); renderCheckout()}
+function pickPay(p) {S.pay = p; haptic(); renderCheckout()}
+function submit() {
+  if (!canSend) {$("coErr").textContent = "Откройте меню кнопкой «🧁 Меню» под полем ввода в чате с ботом — иначе заказ не дойдёт."; return}
+  const data = JSON.stringify({v: 1, cart: S.cart, day: S.day, k: S.k, pay: S.pay, name: $("name").value.trim()});
+  store.set("cart", {}); store.set("name", $("name").value.trim());
+  haptic("medium");
+  tg.sendData(data);                                                  // Telegram закроет меню, бот ответит в чате
+}
+
+/* ---------- старт ---------- */
+(async function start() {
+  if (!inTelegram) {show("nobot"); return}
+  tg.ready(); tg.expand();
+  try {tg.setHeaderColor("secondary_bg_color"); tg.setBackgroundColor("secondary_bg_color")} catch (e) {}
+  $("name").value = store.get("name", "") || (tg.initDataUnsafe && tg.initDataUnsafe.user && tg.initDataUnsafe.user.first_name) || "";
+  const apply = j => {
+    S.sbp = j.sbp; S.lead = j.lead || 45; S.tz = j.tz ?? 3; S.cal = j.calendar || {};
+    S.folders = j.folders; S.items = {}; j.items.forEach(i => S.items[i.id] = i);
+    S.cart = Object.fromEntries(Object.entries(store.get("cart", {})).filter(([id]) => S.items[id]));
+    if (!S.folders.some(f => f.id === S.cat)) S.cat = (S.folders[0] || {}).id;
+    if (!S.pay) S.pay = S.sbp ? "sbp" : "card";
+    renderCats(); renderItems(); updateMain();
+  };
+  const cached = store.get("menu", null);
+  if (cached) apply(cached);
+  try {
+    const r = await fetch("menu.json?t=" + Math.floor(Date.now() / 60000), {cache: "no-store"});
+    const j = await r.json(); store.set("menu", j); apply(j); $("menuErr").textContent = "";
+  } catch (e) {
+    $("menuErr").textContent = cached ? "Показываю меню с прошлого раза — нет связи." : "Не удалось загрузить меню — проверьте интернет и откройте ещё раз.";
+    if (!cached) $("items").innerHTML = "";
+  }
+  if (!canSend) $("menuErr").textContent = "Чтобы оформить заказ, откройте меню кнопкой «🧁 Меню» под полем ввода в чате с ботом.";
+})();
+</script>
+</body>
+</html>
