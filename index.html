@@ -69,6 +69,8 @@ input{width:100%;border:0;background:transparent;color:var(--text);font:inherit;
   <div class="total"><span>Итого</span><span id="cartTotal"></span></div>
 
   <div class="sec-title">Когда заберёте</div>
+  <div class="box" id="asapBox" style="display:none"><div class="opt" id="asapNew" onclick="pickNewAsap()"><span class="dot"></span>
+      <div>⚡ Как можно скорее<small id="asapSmall">будет готово через ~15 минут</small></div></div></div>
   <div class="chips" id="days"></div>
   <div class="chips wrap" id="wins" style="margin-top:8px"></div>
   <div class="hint" id="slotHint"></div>
@@ -99,7 +101,7 @@ const $ = id => document.getElementById(id);
 const rub = x => Math.round(x).toLocaleString("ru-RU") + " ₽";
 const esc = s => String(s).replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
 const DAYS = ["вс", "пн", "вт", "ср", "чт", "пт", "сб"];
-const S = {items: {}, folders: [], cart: {}, cat: null, cal: {}, lead: 45, tz: 3, day: null, k: null, pay: null, sbp: false};
+const S = {items: {}, folders: [], cart: {}, cat: null, cal: {}, lead: 15, tz: 3, day: null, k: null, pay: null, sbp: false, asap: false};
 const store = {get(k, d) {try {return JSON.parse(localStorage.getItem(k)) ?? d} catch (e) {return d}},
                set(k, v) {try {localStorage.setItem(k, JSON.stringify(v))} catch (e) {}}};
 // заказ отдаём боту через sendData — это работает, только если меню открыто кнопкой «🧁 Меню» под полем ввода
@@ -145,6 +147,14 @@ function slots() {
   return out.slice(0, 7);
 }
 
+function asapAt() {                                                  // «как можно скорее»: через 15 мин, вверх до 5 мин — если сегодня принимают
+  const now = mskNow(), t = new Date(now.getTime() + 15 * 60e3);
+  let m = t.getUTCHours() * 60 + t.getUTCMinutes() + (t.getUTCSeconds() ? 1 : 0); m += (5 - m % 5) % 5;
+  const ranges = S.cal[ymd(now)] || [];
+  return ranges.some(([a, b]) => a * 30 <= m && m < b * 30) && m < 1440 ? m : null;
+}
+const hhmm = m => String(Math.floor(m / 60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0");
+
 /* ---------- меню ---------- */
 function cartInfo() {
   let n = 0, sum = 0;
@@ -177,7 +187,7 @@ function updateMain() {
   const {n, sum} = cartInfo();
   if ($("menu").classList.contains("on")) main(n ? `Корзина · ${n} шт · ${rub(sum)}` : "", openCheckout);
   else if ($("checkout").classList.contains("on")) {
-    main(S.day && S.k !== null ? `Оформить и оплатить ${rub(sum)}` : "Выберите время самовывоза", submit, !!n);
+    main(S.asap || (S.day && S.k !== null) ? `Оформить и оплатить ${rub(sum)}` : "Выберите время самовывоза", submit, !!n);
   }
 }
 
@@ -185,8 +195,9 @@ function updateMain() {
 function openCheckout() {
   show("checkout"); back(() => {show("menu"); back(null); updateMain()});
   const sl = slots();
+  if (asapAt() !== null && S.k === null) S.asap = true;              // можно забрать в ближайшие ~15–20 мин — это и предлагаем первым
   if (!sl.some(d => d.day === S.day)) {S.day = sl.length ? sl[0].day : null; S.k = null}
-  if (S.day && S.k === null) {const d = sl.find(x => x.day === S.day); if (d && d.windows.length) S.k = d.windows[0].k}   // ближайшее окно сразу
+  if (!S.asap && S.day && S.k === null) {const d = sl.find(x => x.day === S.day); if (d && d.windows.length) S.k = d.windows[0].k}   // ближайшее окно сразу
   renderCheckout();
 }
 function renderCheckout() {
@@ -195,27 +206,34 @@ function renderCheckout() {
   $("cartRows").innerHTML = rows.map(([id, q]) => `<div class="row"><div class="name">${esc(S.items[id].name)}</div>${stepper(id)}
       <div class="sum">${rub(S.items[id].cost * q)}</div></div>`).join("") || `<div class="row hint">Корзина пуста</div>`;
   $("cartTotal").textContent = rub(cartInfo().sum);
-  $("days").innerHTML = sl.map(d => `<button class="chip ${d.day === S.day ? "on" : ""}" onclick="pickDay('${d.day}')">${esc(d.label)}</button>`).join("");
+  const am = asapAt();
+  if (am === null) S.asap = false;
+  $("asapBox").style.display = am === null ? "none" : "block";
+  $("asapNew").classList.toggle("on", S.asap);
+  if (am !== null) $("asapSmall").textContent = `будет готово к ${hhmm(am)}`;
+  $("days").innerHTML = sl.map(d => `<button class="chip ${!S.asap && d.day === S.day ? "on" : ""}" onclick="pickDay('${d.day}')">${esc(d.label)}</button>`).join("");
   const d = sl.find(x => x.day === S.day);
   if (d && !d.windows.some(w => w.k === S.k)) S.k = null;
-  $("wins").innerHTML = d ? d.windows.map(w => `<button class="chip ${w.k === S.k ? "on" : ""}" onclick="pickWin(${w.k})">${w.label}</button>`).join("") : "";
-  $("slotHint").textContent = sl.length ? "" : "Сейчас нет свободного времени для самовывоза.";
+  $("wins").innerHTML = d ? d.windows.map(w => `<button class="chip ${!S.asap && w.k === S.k ? "on" : ""}" onclick="pickWin(${w.k})">${w.label}</button>`).join("") : "";
+  $("slotHint").textContent = sl.length || am !== null ? "" : "Сейчас нет свободного времени для самовывоза.";
   $("pays").innerHTML = `<div class="opt on"><span class="dot"></span><div>По СБП, сразу после оформления
       <small>кнопка оплаты придёт в чат с ботом — откроется приложение вашего банка</small></div></div>`;
   updateMain();
 }
-function pickDay(d) {S.day = d; S.k = null; haptic(); renderCheckout()}
-function pickWin(k) {S.k = k; haptic(); renderCheckout()}
+function pickDay(d) {S.asap = false; S.day = d; S.k = null; haptic(); renderCheckout()}
+function pickWin(k) {S.asap = false; S.k = k; haptic(); renderCheckout()}
+function pickNewAsap() {S.asap = true; haptic(); renderCheckout()}
 function pickPay(p) {S.pay = p; haptic(); renderCheckout()}
 function submit() {
-  if (!S.day || S.k === null) {                                       // кнопка не «мёртвая»: подсказываем, чего не хватает
+  if (!S.asap && (!S.day || S.k === null)) {                         // кнопка не «мёртвая»: подсказываем, чего не хватает
     $("slotHint").textContent = "👆 Выберите день и время, когда заберёте заказ";
     $("days").scrollIntoView({behavior: "smooth", block: "center"});
     try {tg.HapticFeedback.notificationOccurred("error")} catch (e) {}
     return;
   }
   if (!canSend) {$("coErr").textContent = "Откройте меню кнопкой «🧁 Меню» под полем ввода в чате с ботом — иначе заказ не дойдёт."; return}
-  const data = JSON.stringify({v: 1, cart: S.cart, day: S.day, k: S.k, pay: S.pay, name: $("name").value.trim()});
+  const data = JSON.stringify(S.asap ? {v: 1, cart: S.cart, asap: 1, pay: S.pay, name: $("name").value.trim()}
+                                     : {v: 1, cart: S.cart, day: S.day, k: S.k, pay: S.pay, name: $("name").value.trim()});
   store.set("cart", {}); store.set("name", $("name").value.trim());
   haptic("medium");
   tg.sendData(data);                                                  // Telegram закроет меню, бот ответит в чате
