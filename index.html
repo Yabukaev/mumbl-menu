@@ -81,6 +81,16 @@ input{width:100%;border:0;background:transparent;color:var(--text);font:inherit;
   <p class="hint">Телефон бот попросит в чате, если ещё не знает.</p>
   <div class="err" id="coErr"></div>
 </section>
+<section id="move" class="screen">
+  <div class="sec-title">Перенести предзаказ</div>
+  <p class="hint">Выберите новое время — кухня приготовит к нему. Если вы уже у кофейни — нажмите «Я уже здесь».</p>
+  <div class="box"><div class="opt" id="asap" onclick="pickAsap()"><span class="dot"></span><div>Я уже здесь — приготовьте сейчас
+      <small>будет готово примерно через 15 минут</small></div></div></div>
+  <div class="chips" id="mdays" style="margin-top:12px"></div>
+  <div class="chips wrap" id="mwins" style="margin-top:8px"></div>
+  <div class="hint" id="mHint"></div>
+  <div class="err" id="mErr"></div>
+</section>
 <div id="fallbar"><button class="btn" id="fallBtn"></button></div>
 
 <script>
@@ -95,6 +105,7 @@ const store = {get(k, d) {try {return JSON.parse(localStorage.getItem(k)) ?? d} 
 // заказ отдаём боту через sendData — это работает, только если меню открыто кнопкой «🧁 Меню» под полем ввода
 const inTelegram = !!(tg && tg.platform && tg.platform !== "unknown");
 const canSend = inTelegram && !(tg.initDataUnsafe && tg.initDataUnsafe.query_id);
+const MOVE = Number(new URLSearchParams(location.search).get("move")) || 0;   // ?move=<строка> — перенос времени (кнопка из напоминания)
 
 function haptic(t) {try {tg.HapticFeedback.impactOccurred(t || "light")} catch (e) {}}
 let mainHandler = null;
@@ -210,6 +221,34 @@ function submit() {
   tg.sendData(data);                                                  // Telegram закроет меню, бот ответит в чате
 }
 
+/* ---------- перенос времени ---------- */
+const M = {day: null, k: null, asap: false};
+function openMove() {
+  show("move"); back(null); S.lead = 15;
+  const sl = slots();
+  if (!sl.some(d => d.day === M.day)) M.day = sl.length ? sl[0].day : null;
+  renderMove();
+}
+function renderMove() {
+  const sl = slots();
+  $("asap").classList.toggle("on", M.asap);
+  $("mdays").innerHTML = sl.map(d => `<button class="chip ${!M.asap && d.day === M.day ? "on" : ""}" onclick="pickMDay('${d.day}')">${esc(d.label)}</button>`).join("");
+  const d = sl.find(x => x.day === M.day);
+  $("mwins").innerHTML = d ? d.windows.map(w => `<button class="chip ${!M.asap && w.k === M.k ? "on" : ""}" onclick="pickMWin(${w.k})">${w.label}</button>`).join("") : "";
+  $("mHint").textContent = sl.length ? "" : "Сейчас нет свободного времени — можно выбрать «Я уже здесь».";
+  const label = M.asap ? "Готовить сейчас" : (M.k !== null && d && d.windows.some(w => w.k === M.k)) ? `Перенести на ${hm(M.k)}` : "Выберите время";
+  main(label, sendMove);
+}
+function pickAsap() {M.asap = true; M.k = null; haptic(); renderMove()}
+function pickMDay(d) {M.asap = false; M.day = d; M.k = null; haptic(); renderMove()}
+function pickMWin(k) {M.asap = false; M.k = k; haptic(); renderMove()}
+function sendMove() {
+  if (!M.asap && (M.day === null || M.k === null)) {$("mHint").textContent = "👆 Выберите новое время или «Я уже здесь»"; return}
+  if (!canSend) {$("mErr").textContent = "Откройте перенос кнопкой «🕒 Поменять время» под полем ввода в чате с ботом."; return}
+  haptic("medium");
+  tg.sendData(JSON.stringify(M.asap ? {v: 1, act: "move", row: MOVE, asap: 1} : {v: 1, act: "move", row: MOVE, day: M.day, k: M.k}));
+}
+
 /* ---------- старт ---------- */
 (async function start() {
   if (!inTelegram) {show("nobot"); return}
@@ -222,6 +261,7 @@ function submit() {
     S.cart = Object.fromEntries(Object.entries(store.get("cart", {})).filter(([id]) => S.items[id]));
     if (!S.folders.some(f => f.id === S.cat)) S.cat = (S.folders[0] || {}).id;
     S.pay = "sbp";
+    if (MOVE) {openMove(); return}
     renderCats(); renderItems(); updateMain();
   };
   const cached = store.get("menu", null);
@@ -233,7 +273,7 @@ function submit() {
     $("menuErr").textContent = cached ? "Показываю меню с прошлого раза — нет связи." : "Не удалось загрузить меню — проверьте интернет и откройте ещё раз.";
     if (!cached) $("items").innerHTML = "";
   }
-  if (!canSend) $("menuErr").textContent = "Чтобы оформить заказ, откройте меню кнопкой «🧁 Меню» под полем ввода в чате с ботом.";
+  if (!canSend && !MOVE) $("menuErr").textContent = "Чтобы оформить заказ, откройте меню кнопкой «🧁 Меню» под полем ввода в чате с ботом.";
 })();
 </script>
 </body>
