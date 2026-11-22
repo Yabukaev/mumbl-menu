@@ -78,7 +78,7 @@ input{width:100%;border:0;background:transparent;color:var(--text);font:inherit;
 
   <div class="sec-title">Оплата</div>
   <div class="box" id="pays"></div>
-  <p class="hint">Телефон бот попросит в чате, если ещё не знает. Оплата по СБП — кнопкой в чате сразу после «Оформить».</p>
+  <p class="hint">Телефон бот попросит в чате, если ещё не знает.</p>
   <div class="err" id="coErr"></div>
 </section>
 <div id="fallbar"><button class="btn" id="fallBtn"></button></div>
@@ -166,8 +166,7 @@ function updateMain() {
   const {n, sum} = cartInfo();
   if ($("menu").classList.contains("on")) main(n ? `Корзина · ${n} шт · ${rub(sum)}` : "", openCheckout);
   else if ($("checkout").classList.contains("on")) {
-    const ready = n && S.day && S.k !== null && S.pay;
-    main(S.pay === "sbp" ? `Оформить и оплатить ${rub(sum)}` : `Оформить · ${rub(sum)}`, submit, !!ready);
+    main(S.day && S.k !== null ? `Оформить и оплатить ${rub(sum)}` : "Выберите время самовывоза", submit, !!n);
   }
 }
 
@@ -176,6 +175,7 @@ function openCheckout() {
   show("checkout"); back(() => {show("menu"); back(null); updateMain()});
   const sl = slots();
   if (!sl.some(d => d.day === S.day)) {S.day = sl.length ? sl[0].day : null; S.k = null}
+  if (S.day && S.k === null) {const d = sl.find(x => x.day === S.day); if (d && d.windows.length) S.k = d.windows[0].k}   // ближайшее окно сразу
   renderCheckout();
 }
 function renderCheckout() {
@@ -189,17 +189,20 @@ function renderCheckout() {
   if (d && !d.windows.some(w => w.k === S.k)) S.k = null;
   $("wins").innerHTML = d ? d.windows.map(w => `<button class="chip ${w.k === S.k ? "on" : ""}" onclick="pickWin(${w.k})">${w.label}</button>`).join("") : "";
   $("slotHint").textContent = sl.length ? "" : "Сейчас нет свободного времени для самовывоза.";
-  const opts = [];
-  if (S.sbp) opts.push(["sbp", "Оплатить сейчас по СБП", "кнопка оплаты придёт в чат — откроется приложение вашего банка"]);
-  opts.push(["card", "Картой при получении", ""], ["cash", "Наличными при получении", ""]);
-  $("pays").innerHTML = opts.map(([v, t, s]) => `<div class="opt ${S.pay === v ? "on" : ""}" onclick="pickPay('${v}')"><span class="dot"></span>
-      <div>${t}${s ? `<small>${s}</small>` : ""}</div></div>`).join("");
+  $("pays").innerHTML = `<div class="opt on"><span class="dot"></span><div>По СБП, сразу после оформления
+      <small>кнопка оплаты придёт в чат с ботом — откроется приложение вашего банка</small></div></div>`;
   updateMain();
 }
 function pickDay(d) {S.day = d; S.k = null; haptic(); renderCheckout()}
 function pickWin(k) {S.k = k; haptic(); renderCheckout()}
 function pickPay(p) {S.pay = p; haptic(); renderCheckout()}
 function submit() {
+  if (!S.day || S.k === null) {                                       // кнопка не «мёртвая»: подсказываем, чего не хватает
+    $("slotHint").textContent = "👆 Выберите день и время, когда заберёте заказ";
+    $("days").scrollIntoView({behavior: "smooth", block: "center"});
+    try {tg.HapticFeedback.notificationOccurred("error")} catch (e) {}
+    return;
+  }
   if (!canSend) {$("coErr").textContent = "Откройте меню кнопкой «🧁 Меню» под полем ввода в чате с ботом — иначе заказ не дойдёт."; return}
   const data = JSON.stringify({v: 1, cart: S.cart, day: S.day, k: S.k, pay: S.pay, name: $("name").value.trim()});
   store.set("cart", {}); store.set("name", $("name").value.trim());
@@ -218,7 +221,7 @@ function submit() {
     S.folders = j.folders; S.items = {}; j.items.forEach(i => S.items[i.id] = i);
     S.cart = Object.fromEntries(Object.entries(store.get("cart", {})).filter(([id]) => S.items[id]));
     if (!S.folders.some(f => f.id === S.cat)) S.cat = (S.folders[0] || {}).id;
-    if (!S.pay) S.pay = S.sbp ? "sbp" : "card";
+    S.pay = "sbp";
     renderCats(); renderItems(); updateMain();
   };
   const cached = store.get("menu", null);
